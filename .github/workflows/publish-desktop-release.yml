@@ -1,4 +1,4 @@
-name: Publish Desktop Release
+name: 发布 Windows 桌面版
 
 on:
   push:
@@ -12,18 +12,18 @@ jobs:
       contents: write
 
     steps:
-      - name: Checkout repository
+      - name: 检出仓库
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Setup Node.js
+      - name: 准备 Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
 
-      - name: Read release metadata
+      - name: 读取版本信息
         id: meta
         shell: bash
         run: |
@@ -31,7 +31,7 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=v$version" >> "$GITHUB_OUTPUT"
 
-      - name: Check tag exists
+      - name: 检查版本标签
         id: tag_check
         shell: bash
         run: |
@@ -39,10 +39,10 @@ jobs:
             echo "exists=true" >> "$GITHUB_OUTPUT"
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
-            echo "No matching release tag found for ${{ steps.meta.outputs.tag }}. Skipping publish."
+            echo "没有找到与 ${{ steps.meta.outputs.tag }} 对应的版本标签，本次跳过发布。"
           fi
 
-      - name: Rewrite mirror URLs for CI
+      - name: 切换依赖源为 npm 官方源
         if: steps.tag_check.outputs.exists == 'true'
         shell: pwsh
         run: |
@@ -50,16 +50,64 @@ jobs:
           $content = Get-Content -Raw $lockfile
           $content = $content -replace 'https://registry\.npmmirror\.com/', 'https://registry.npmjs.org/'
           Set-Content -Path $lockfile -Value $content -Encoding UTF8
+          npm config set registry https://registry.npmjs.org/
+          npm config set replace-registry-host always
 
-      - name: Install dependencies
+      - name: 安装依赖
         if: steps.tag_check.outputs.exists == 'true'
-        run: npm ci
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            npm ci --no-audit --no-fund
+            if ($LASTEXITCODE -eq 0) {
+              exit 0
+            }
+            if ($attempt -eq 3) {
+              throw "依赖安装失败，已达到最大重试次数。"
+            }
+            Start-Sleep -Seconds 15
+          }
 
-      - name: Build Windows installer
+      - name: 构建 Windows 安装包
         if: steps.tag_check.outputs.exists == 'true'
         run: npm run dist:win
 
-      - name: Verify release artifacts
+      - name: 生成中文发布说明
+        if: steps.tag_check.outputs.exists == 'true'
+        shell: pwsh
+        run: |
+          @"
+          # interview++ Windows 桌面版 ${{ steps.meta.outputs.tag }}
+
+          ## 版本简介
+
+          这是 `interview++` 的 Windows 桌面安装包，适合直接下载安装使用。
+
+          ## 本版核心能力
+
+          - 简历版本管理、简历画像和预测题生成
+          - 真实面试场次沉淀、问题整理和回答建议生成
+          - 高频问题库的沉淀、编辑、标签、置顶、删除和 AI 去重
+          - 全局检索、作战总览、AI 备战建议
+          - 本地备份导入导出、回收站恢复、免责协议首启确认
+
+          ## 安装与使用说明
+
+          - 双击 `.exe` 安装包即可开始安装
+          - 安装时可以自选安装路径
+          - 第一次启动前，必须先在本机填写 DeepSeek API Key
+          - 第一次启动前，必须勾选开源声明与免责声明
+
+          ## 数据与隐私说明
+
+          - API Key 默认保存在本机
+          - 简历、面试场次、高频题和回答稿默认保存在本机
+          - 本地备份默认不包含 API Key
+          - 卸载不会主动删除你的业务数据
+          "@ | Set-Content -Path release-notes.zh-CN.md -Encoding UTF8
+
+      - name: 检查发布产物
         if: steps.tag_check.outputs.exists == 'true'
         shell: bash
         run: |
@@ -67,13 +115,13 @@ jobs:
           ls -lh "release/interview-plus-plus-setup-${{ steps.meta.outputs.version }}.exe.blockmap"
           ls -lh "release/latest.yml"
 
-      - name: Publish GitHub release
+      - name: 发布到 GitHub Releases
         if: steps.tag_check.outputs.exists == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.meta.outputs.tag }}
-          name: Interview++ ${{ steps.meta.outputs.tag }}
-          generate_release_notes: true
+          name: interview++ Windows 桌面版 ${{ steps.meta.outputs.tag }}
+          body_path: release-notes.zh-CN.md
           overwrite_files: true
           files: |
             release/interview-plus-plus-setup-${{ steps.meta.outputs.version }}.exe
