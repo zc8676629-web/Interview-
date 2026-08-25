@@ -115,6 +115,7 @@ export interface AppSettings {
   apiKey: string;
   selectedModel: DeepSeekModel;
   disclaimerAcceptedAt: string | null;
+  acknowledgedInstallSignature: string | null;
 }
 
 export interface PredictedQuestionRecord {
@@ -333,7 +334,8 @@ export interface NewInterviewRecord {
 const DEFAULT_SETTINGS: AppSettings = {
   apiKey: "",
   selectedModel: "deepseek-v4-flash",
-  disclaimerAcceptedAt: null
+  disclaimerAcceptedAt: null,
+  acknowledgedInstallSignature: null
 };
 
 const DEFAULT_CORE_STATE: PersistedAppStateSnapshot = {
@@ -409,7 +411,8 @@ export async function createAppStateStore(options?: { dataDir?: string }): Promi
       state.settings = {
         apiKey: input.apiKey ?? state.settings.apiKey,
         selectedModel: input.selectedModel ?? state.settings.selectedModel,
-        disclaimerAcceptedAt: input.disclaimerAcceptedAt ?? state.settings.disclaimerAcceptedAt
+        disclaimerAcceptedAt: input.disclaimerAcceptedAt ?? state.settings.disclaimerAcceptedAt,
+        acknowledgedInstallSignature: input.acknowledgedInstallSignature ?? state.settings.acknowledgedInstallSignature
       };
       await persist();
       return state.settings;
@@ -934,7 +937,8 @@ function normalizePersistedState(input: unknown, fallbackApiKey = ""): Persisted
     settings: {
       apiKey: raw.settings?.apiKey ?? fallbackApiKey,
       selectedModel: raw.settings?.selectedModel ?? DEFAULT_SETTINGS.selectedModel,
-      disclaimerAcceptedAt: raw.settings?.disclaimerAcceptedAt ?? null
+      disclaimerAcceptedAt: raw.settings?.disclaimerAcceptedAt ?? null,
+      acknowledgedInstallSignature: raw.settings?.acknowledgedInstallSignature ?? null
     },
     resumes: Array.isArray(raw.resumes) ? raw.resumes.map(normalizeResumeRecord) : [],
     interviews: Array.isArray(raw.interviews) ? raw.interviews.map(normalizeInterviewRecord) : [],
@@ -963,7 +967,8 @@ function migrateLegacyState(input: Partial<LegacyAppStateSnapshot>, fallbackApiK
   const settings = {
     apiKey: input.settings?.apiKey ?? fallbackApiKey,
     selectedModel: input.settings?.selectedModel ?? DEFAULT_SETTINGS.selectedModel,
-    disclaimerAcceptedAt: input.settings?.disclaimerAcceptedAt ?? null
+    disclaimerAcceptedAt: input.settings?.disclaimerAcceptedAt ?? null,
+    acknowledgedInstallSignature: input.settings?.acknowledgedInstallSignature ?? null
   };
   const resumes = (input.analyses ?? []).map((analysis, index) =>
     normalizeResumeRecord({

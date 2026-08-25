@@ -26,6 +26,7 @@ export interface BootstrapPayload {
     selectedModel: ModelOption;
     maskedApiKey?: string;
     disclaimerAccepted: boolean;
+    requiresSetup?: boolean;
   };
   resumes: ResumeRecord[];
   interviews: InterviewRecord[];
@@ -275,6 +276,7 @@ export async function saveSettings(input: { apiKey?: string; selectedModel: Mode
     selectedModel?: ModelOption;
     maskedApiKey?: string;
     disclaimerAccepted?: boolean;
+    requiresSetup?: boolean;
   };
   if (!response.ok) {
     throw new Error(payload.error || "保存设置失败");

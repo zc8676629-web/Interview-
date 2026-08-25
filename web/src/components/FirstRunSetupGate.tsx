@@ -18,7 +18,7 @@ interface FirstRunSetupGateProps {
 }
 
 export function FirstRunSetupGate(props: FirstRunSetupGateProps) {
-  const saveDisabled = !props.disclaimerChecked || (!props.hasApiKey && !props.apiKeyInput.trim());
+  const saveDisabled = !props.disclaimerChecked;
 
   return (
     <main className="first-run-shell">
@@ -29,7 +29,7 @@ export function FirstRunSetupGate(props: FirstRunSetupGateProps) {
           <p>
             {props.hasApiKey
               ? "已检测到这台机器上存在本地 Key，本次只需勾选免责协议并确认配置，即可进入主页。"
-              : "第一次进入主页前，必须先在本机保存 DeepSeek API Key，并确认你已阅读免责协议。"}
+              : "本项目依赖大模型 API 调用。建议先配置 DeepSeek API Key；如果你暂时没有现成的 Key，也可以先勾选免责协议进入主页，后续再到系统设置补充。"}
           </p>
         </div>
         <div className="first-run-badges" aria-label="首次启动说明">
@@ -47,18 +47,23 @@ export function FirstRunSetupGate(props: FirstRunSetupGateProps) {
           saving={props.saving}
           testing={props.testing}
           title="首次启动配置"
-          description="先把 DeepSeek Key 和模型配置好，再保存并进入主页。后续升级应用时，这里的本地数据会自动保留。"
+          description="免责协议勾选后即可进入主页。DeepSeek Key 和模型可以现在就配，也可以稍后到系统设置补充；后续升级时，本机数据会继续保留。"
           saveLabel="保存并进入主页"
           saveDisabled={saveDisabled}
           extraContent={
-            <label className="agreement-box">
-              <input
-                type="checkbox"
-                checked={props.disclaimerChecked}
-                onChange={(event) => props.onDisclaimerChange(event.target.checked)}
-              />
-              <span>我已阅读并接受开源声明与免责声明，同意自行保管本机上的 Key、简历、面试记录和备份数据。</span>
-            </label>
+            <>
+              <p className="settings-highlight-note">
+                说明：AI 分析、AI 回答建议、AI 去重和 AI 备战建议都依赖大模型 API。如果暂时没有现成 Key，先进入首页也可以，后续使用这些功能时系统会提示你去系统设置完成配置。
+              </p>
+              <label className="agreement-box">
+                <input
+                  type="checkbox"
+                  checked={props.disclaimerChecked}
+                  onChange={(event) => props.onDisclaimerChange(event.target.checked)}
+                />
+                <span>我已阅读并接受开源声明与免责声明，同意自行保管本机上的 Key、简历、面试记录和备份数据。</span>
+              </label>
+            </>
           }
           onApiKeyChange={props.onApiKeyChange}
           onModelChange={props.onModelChange}

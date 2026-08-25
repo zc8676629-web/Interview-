@@ -2,22 +2,18 @@
   "name": "interview-plus-plus",
   "productName": "Interview Plus Plus",
   "version": "0.1.0",
+  "description": "本地优先的面试复盘与 AI 备战工作台",
   "private": true,
   "type": "module",
   "main": "desktop/dist/main.js",
   "scripts": {
-    "dev": "concurrently \"npm:dev:server\" \"npm:dev:web\"",
-    "dev:server": "tsx watch server/src/index.ts",
-    "dev:web": "vite --config web/vite.config.ts",
-    "build": "npm run build:server && npm run build:web",
-    "build:server": "tsc -p server/tsconfig.json",
-    "build:web": "vite build --config web/vite.config.ts",
-    "build:desktop": "tsc -p desktop/tsconfig.json",
     "test": "vitest run",
-    "test:watch": "vitest",
-    "start": "node server/dist/index.js",
-    "start:desktop": "npm run build && npm run build:desktop && electron .",
-    "dist:win": "npm run build && npm run build:desktop && electron-builder --win nsis --x64"
+    "build:web": "vite build --config web/vite.config.ts",
+    "build:server": "tsc -p server/tsconfig.json",
+    "build:desktop": "tsc -p desktop/tsconfig.json",
+    "build": "npm run build:server && npm run build:desktop && npm run build:web",
+    "dist:win": "npm run build && electron-builder --config build/electron-builder.win.json --publish never",
+    "dist:mac": "npm run build && electron-builder --config build/electron-builder.mac.json --x64 --arm64 --publish never"
   },
   "dependencies": {
     "cors": "^2.8.5",
@@ -52,39 +48,5 @@
     "typescript": "^5.9.2",
     "vite": "^7.1.3",
     "vitest": "^3.2.4"
-  },
-  "build": {
-    "appId": "com.interviewplusplus.desktop",
-    "productName": "Interview Plus Plus",
-    "asar": true,
-    "artifactName": "interview-plus-plus-setup-${version}.${ext}",
-    "directories": {
-      "output": "release"
-    },
-    "files": [
-      "desktop/dist/**/*",
-      "server/dist/**/*",
-      "web/dist/**/*",
-      "package.json",
-      "!**/*.map"
-    ],
-    "win": {
-      "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        }
-      ]
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "allowElevation": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "deleteAppDataOnUninstall": false
-    }
   }
 }

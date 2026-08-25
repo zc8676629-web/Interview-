@@ -38,7 +38,8 @@ if (!hasSingleInstanceLock) {
 async function startDesktopApp() {
   await fs.mkdir(persistentRootDir, { recursive: true });
   const workspaceDataDir = path.join(persistentRootDir, "workspace");
-  const port = await startLocalServer(workspaceDataDir);
+  const installSignature = await resolveInstallSignature();
+  const port = await startLocalServer(workspaceDataDir, installSignature);
   localOrigin = `http://127.0.0.1:${port}`;
 
   createMainWindow();
@@ -54,12 +55,15 @@ async function startDesktopApp() {
   });
 }
 
-async function startLocalServer(dataDir: string) {
+async function startLocalServer(dataDir: string, installSignature?: string) {
   const serverEntry = path.join(app.getAppPath(), "server", "dist", "app.js");
   const serverModule = (await import(pathToFileURL(serverEntry).href)) as {
-    createApp(options?: { dataDir?: string }): Promise<Parameters<typeof http.createServer>[0]>;
+    createApp(options?: {
+      dataDir?: string;
+      installSignature?: string;
+    }): Promise<Parameters<typeof http.createServer>[0]>;
   };
-  const expressApp = await serverModule.createApp({ dataDir });
+  const expressApp = await serverModule.createApp({ dataDir, installSignature });
   localServer = http.createServer(expressApp);
 
   await new Promise<void>((resolve, reject) => {
@@ -76,6 +80,20 @@ async function startLocalServer(dataDir: string) {
   }
 
   return (address as AddressInfo).port;
+}
+
+async function resolveInstallSignature() {
+  const executablePath = path.resolve(app.getPath("exe"));
+  const stats = await fs.stat(executablePath);
+  const createdAtMs = stats.birthtimeMs > 0 ? stats.birthtimeMs : stats.ctimeMs;
+
+  return [
+    app.getVersion(),
+    executablePath,
+    stats.size,
+    Math.trunc(createdAtMs),
+    Math.trunc(stats.mtimeMs)
+  ].join("|");
 }
 
 function createMainWindow() {

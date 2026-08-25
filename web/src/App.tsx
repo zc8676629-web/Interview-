@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import packageJson from "../../package.json";
 
 import { AnalysisView } from "./components/AnalysisView";
 import { DisclaimerContent } from "./components/DisclaimerContent";
@@ -46,6 +47,10 @@ type WorkspaceFocusTarget = {
   nonce: number;
 };
 
+const OPEN_SOURCE_REPOSITORY_URL = "https://github.com/zc8676629-web/Interview-.git";
+const APP_VERSION = packageJson.version;
+const MISSING_API_KEY_GUIDANCE = "当前 AI 功能依赖大模型 API，请先到系统设置配置 DeepSeek API Key，再继续使用。";
+
 export default function App() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -62,6 +67,7 @@ export default function App() {
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [disclaimerAccepted, setDisclaimerAccepted] = useState(false);
   const [disclaimerChecked, setDisclaimerChecked] = useState(false);
+  const [requiresSetup, setRequiresSetup] = useState(true);
   const [selectedModel, setSelectedModel] = useState<ModelOption>("deepseek-v4-flash");
   const [file, setFile] = useState<File | null>(null);
   const [resumes, setResumes] = useState<ResumeRecord[]>([]);
@@ -87,6 +93,7 @@ export default function App() {
   const [importingData, setImportingData] = useState(false);
   const toastIdRef = useRef(1);
   const workspaceTargetRef = useRef(1);
+  const setupGateVisible = !loading && requiresSetup;
 
   function publishMessage(nextMessage: string) {
     setStatusMessage(nextMessage);
@@ -99,10 +106,13 @@ export default function App() {
   }
 
   function applyBootstrap(payload: BootstrapPayload) {
+    const nextRequiresSetup = payload.settings.requiresSetup ?? !payload.settings.disclaimerAccepted;
+
     setHasApiKey(payload.settings.hasApiKey);
     setMaskedApiKey(payload.settings.maskedApiKey ?? "");
     setDisclaimerAccepted(Boolean(payload.settings.disclaimerAccepted));
-    setDisclaimerChecked(Boolean(payload.settings.disclaimerAccepted));
+    setDisclaimerChecked(nextRequiresSetup ? false : Boolean(payload.settings.disclaimerAccepted));
+    setRequiresSetup(nextRequiresSetup);
     setSelectedModel(payload.settings.selectedModel);
     setResumes(payload.resumes ?? []);
     setInterviews(payload.interviews ?? []);
@@ -130,6 +140,22 @@ export default function App() {
     setWorkspaceTarget(null);
   }
 
+  function isMissingApiKeyMessage(message: string) {
+    return message.includes("DeepSeek API Key") && (message.includes("请先保存") || message.includes("请先填写"));
+  }
+
+  function relayMessage(message: string, options?: { navigateToSettings?: boolean }) {
+    if (isMissingApiKeyMessage(message)) {
+      publishMessage(MISSING_API_KEY_GUIDANCE);
+      if (!setupGateVisible && options?.navigateToSettings !== false) {
+        handleWorkspaceChange("settings");
+      }
+      return;
+    }
+
+    publishMessage(message);
+  }
+
   function handleFocusedNavigation(target: Omit<WorkspaceFocusTarget, "nonce">) {
     workspaceTargetRef.current += 1;
     setWorkspacePage(target.page);
@@ -144,9 +170,9 @@ export default function App() {
       try {
         const payload = await fetchBootstrap();
         applyBootstrap(payload);
-        publishMessage("本地数据已加载");
+        relayMessage("本地数据已加载", { navigateToSettings: false });
       } catch (error) {
-        publishMessage(error instanceof Error ? error.message : "加载失败");
+        relayMessage(error instanceof Error ? error.message : "加载失败", { navigateToSettings: false });
       } finally {
         setLoading(false);
       }
@@ -195,14 +221,18 @@ export default function App() {
         selectedModel,
         acceptDisclaimer: options?.acceptDisclaimer
       });
+      const nextRequiresSetup = payload.requiresSetup ?? !payload.disclaimerAccepted;
       setHasApiKey(Boolean(payload.hasApiKey));
       setMaskedApiKey(payload.maskedApiKey ?? "");
       setDisclaimerAccepted(Boolean(payload.disclaimerAccepted));
-      setDisclaimerChecked(Boolean(payload.disclaimerAccepted));
+      setDisclaimerChecked(nextRequiresSetup ? false : Boolean(payload.disclaimerAccepted));
+      setRequiresSetup(nextRequiresSetup);
       setApiKeyInput("");
-      publishMessage(options?.acceptDisclaimer ? "首次配置已完成，正在进入主页" : "本地设置已保存");
+      relayMessage(options?.acceptDisclaimer ? "首次配置已完成，正在进入主页" : "本地设置已保存", {
+        navigateToSettings: false
+      });
     } catch (error) {
-      publishMessage(error instanceof Error ? error.message : "保存失败");
+      relayMessage(error instanceof Error ? error.message : "保存失败", { navigateToSettings: false });
     } finally {
       setSaving(false);
     }
@@ -219,9 +249,9 @@ export default function App() {
       await analyzeResume(file);
       const payload = await fetchBootstrap();
       applyBootstrap(payload);
-      publishMessage("简历分析完成，结果已保存在本地");
+      relayMessage("简历分析完成，结果已保存在本地");
     } catch (error) {
-      publishMessage(error instanceof Error ? error.message : "分析失败");
+      relayMessage(error instanceof Error ? error.message : "分析失败");
     } finally {
       setBusy(false);
     }
@@ -234,9 +264,9 @@ export default function App() {
         apiKey: apiKeyInput || undefined,
         selectedModel
       });
-      publishMessage("DeepSeek 连通性正常");
+      relayMessage("DeepSeek 连通性正常", { navigateToSettings: false });
     } catch (error) {
-      publishMessage(error instanceof Error ? error.message : "连通性测试失败");
+      relayMessage(error instanceof Error ? error.message : "连通性测试失败", { navigateToSettings: false });
     } finally {
       setTesting(false);
     }
@@ -280,13 +310,13 @@ export default function App() {
 
   async function handleGeneratePrepInsight() {
     setGeneratingPrepInsight(true);
-    publishMessage("正在汇总简历、场次和高频题，生成 AI 备战建议...");
+    relayMessage("正在汇总简历、场次和高频题，生成 AI 备战建议...");
     try {
       const nextInsight = await generatePrepInsight();
       setPrepInsight(nextInsight);
-      publishMessage("AI 备战建议已更新");
+      relayMessage("AI 备战建议已更新");
     } catch (error) {
-      publishMessage(error instanceof Error ? error.message : "生成失败");
+      relayMessage(error instanceof Error ? error.message : "生成失败");
     } finally {
       setGeneratingPrepInsight(false);
     }
@@ -373,9 +403,8 @@ export default function App() {
   const heroStatusText = loading ? "正在同步本地工作台..." : statusMessage;
   const heroStatusDetail = hasApiKey
     ? "本地工作台已就绪，可以直接继续分析、沉淀和复盘。"
-    : "还没有保存 API Key，建议先在系统设置里完成配置。";
+    : "当前还没有配置 DeepSeek API Key，使用 AI 功能时系统会引导你前往系统设置完成配置。";
   const heroModelText = hasApiKey ? selectedModel : "待配置";
-  const requiresInitialSetup = !loading && (!hasApiKey || !disclaimerAccepted);
 
   function renderWorkspace() {
     if (workspacePage === "guide") {
@@ -409,7 +438,7 @@ export default function App() {
           onBootstrapSync={applyBootstrap}
           onSessionsChange={setInterviewSessions}
           onHighFrequencyChange={setHighFrequencyQuestions}
-          onMessage={publishMessage}
+          onMessage={relayMessage}
           requestedSessionId={workspaceTarget?.page === "interview-sessions" ? workspaceTarget.sessionId : undefined}
           requestedQuestionId={workspaceTarget?.page === "interview-sessions" ? workspaceTarget.questionId : undefined}
           navigationNonce={workspaceTarget?.page === "interview-sessions" ? workspaceTarget.nonce : undefined}
@@ -427,7 +456,7 @@ export default function App() {
           onSessionsChange={setInterviewSessions}
           onDedupeCandidatesChange={setDedupeCandidates}
           onBootstrapSync={applyBootstrap}
-          onMessage={publishMessage}
+          onMessage={relayMessage}
           requestedQuestionId={workspaceTarget?.page === "high-frequency" ? workspaceTarget.questionId : undefined}
           navigationNonce={workspaceTarget?.page === "high-frequency" ? workspaceTarget.nonce : undefined}
         />
@@ -551,7 +580,7 @@ export default function App() {
             onResumesChange={setResumes}
             onQuestionsChange={setQuestions}
             onAnswersChange={setAnswers}
-            onMessage={publishMessage}
+            onMessage={relayMessage}
             requestedResumeId={workspaceTarget?.page === "resume" ? workspaceTarget.resumeId : undefined}
             requestedPredictionId={workspaceTarget?.page === "resume" ? workspaceTarget.predictionId : undefined}
             navigationNonce={workspaceTarget?.page === "resume" ? workspaceTarget.nonce : undefined}
@@ -567,7 +596,7 @@ export default function App() {
 
   return (
     <>
-      {requiresInitialSetup ? (
+      {setupGateVisible ? (
         <FirstRunSetupGate
           apiKeyInput={apiKeyInput}
           hasApiKey={hasApiKey}
@@ -592,6 +621,17 @@ export default function App() {
               <div className="console-hero-copy">
                 <h1>本地面试作战台</h1>
                 <p>集中管理简历画像、真实场次、高频题和回答稿，所有核心数据默认保留在本机。</p>
+                <p className="console-open-source-note">
+                  该项目已在 GitHub 开源，当前版本 V{APP_VERSION}，仓库地址：
+                  <a
+                    className="console-inline-link"
+                    href={OPEN_SOURCE_REPOSITORY_URL}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {OPEN_SOURCE_REPOSITORY_URL}
+                  </a>
+                </p>
               </div>
               <section className="console-hero-summary" aria-label="首页概览">
                 <div className="console-summary-row console-summary-row-primary">

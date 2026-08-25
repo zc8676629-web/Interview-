@@ -33,7 +33,37 @@ describe("POST /api/analyze-resume", () => {
 });
 
 describe("settings privacy boundaries", () => {
-  it("requires a local key before accepting the disclaimer", async () => {
+  it("requires setup again when the install signature changes", async () => {
+    const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "interview-app-"));
+    tempRoots.push(dataDir);
+
+    const firstInstallApp = await createApp({ dataDir, installSignature: "install-a" });
+    const firstBootstrap = await request(firstInstallApp).get("/api/bootstrap");
+    expect(firstBootstrap.status).toBe(200);
+    expect(firstBootstrap.body.settings.requiresSetup).toBe(true);
+
+    const firstSave = await request(firstInstallApp).post("/api/settings").send({
+      apiKey: "local-secret",
+      selectedModel: "deepseek-v4-flash",
+      acceptDisclaimer: true
+    });
+    expect(firstSave.status).toBe(200);
+    expect(firstSave.body.requiresSetup).toBe(false);
+
+    const sameInstallApp = await createApp({ dataDir, installSignature: "install-a" });
+    const sameInstallBootstrap = await request(sameInstallApp).get("/api/bootstrap");
+    expect(sameInstallBootstrap.status).toBe(200);
+    expect(sameInstallBootstrap.body.settings.requiresSetup).toBe(false);
+
+    const nextInstallApp = await createApp({ dataDir, installSignature: "install-b" });
+    const nextInstallBootstrap = await request(nextInstallApp).get("/api/bootstrap");
+    expect(nextInstallBootstrap.status).toBe(200);
+    expect(nextInstallBootstrap.body.settings.hasApiKey).toBe(true);
+    expect(nextInstallBootstrap.body.settings.disclaimerAccepted).toBe(true);
+    expect(nextInstallBootstrap.body.settings.requiresSetup).toBe(true);
+  });
+
+  it("allows accepting the disclaimer without storing a local key", async () => {
     const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "interview-app-"));
     tempRoots.push(dataDir);
     const app = await createApp({ dataDir });
@@ -43,8 +73,9 @@ describe("settings privacy boundaries", () => {
       selectedModel: "deepseek-v4-flash"
     });
 
-    expect(response.status).toBe(400);
-    expect(response.body.error).toContain("API Key");
+    expect(response.status).toBe(200);
+    expect(response.body.hasApiKey).toBe(false);
+    expect(response.body.disclaimerAccepted).toBe(true);
   });
 
   it("keeps api key and disclaimer local when exporting and importing backups", async () => {

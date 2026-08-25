@@ -1,4 +1,4 @@
-name: 发布 Windows 桌面版
+name: 发布桌面版
 
 on:
   push:
@@ -7,10 +7,12 @@ on:
   workflow_dispatch:
 
 jobs:
-  publish-windows-release:
-    runs-on: windows-latest
-    permissions:
-      contents: write
+  prepare-meta:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
+      tag_exists: ${{ steps.tag_check.outputs.exists }}
 
     steps:
       - name: 检出仓库
@@ -22,7 +24,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
 
       - name: 读取版本信息
         id: meta
@@ -43,8 +44,24 @@ jobs:
             echo "没有找到与 ${{ steps.meta.outputs.tag }} 对应的版本标签，本次跳过发布。"
           fi
 
+  build-windows-release:
+    needs: prepare-meta
+    if: needs.prepare-meta.outputs.tag_exists == 'true'
+    runs-on: windows-latest
+
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 准备 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
       - name: 切换依赖源为 npm 官方源
-        if: steps.tag_check.outputs.exists == 'true'
         shell: pwsh
         run: |
           $lockfile = Join-Path $PWD 'package-lock.json'
@@ -55,7 +72,6 @@ jobs:
           npm config set replace-registry-host always
 
       - name: 安装依赖
-        if: steps.tag_check.outputs.exists == 'true'
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
@@ -71,19 +87,118 @@ jobs:
           }
 
       - name: 构建 Windows 安装包
-        if: steps.tag_check.outputs.exists == 'true'
         run: npm run dist:win
 
-      - name: 生成中文发布说明
-        if: steps.tag_check.outputs.exists == 'true'
-        shell: pwsh
+      - name: 检查发布产物
+        shell: bash
         run: |
-          @"
-          # interview++ Windows 桌面版 ${{ steps.meta.outputs.tag }}
+          ls -lh "release/interview-plus-plus-setup-${{ needs.prepare-meta.outputs.version }}.exe"
+          ls -lh "release/interview-plus-plus-setup-${{ needs.prepare-meta.outputs.version }}.exe.blockmap"
+          ls -lh "release/latest.yml"
+
+      - name: 上传 Windows 发布产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-release
+          path: |
+            release/interview-plus-plus-setup-${{ needs.prepare-meta.outputs.version }}.exe
+            release/interview-plus-plus-setup-${{ needs.prepare-meta.outputs.version }}.exe.blockmap
+            release/latest.yml
+
+  build-macos-release:
+    needs: prepare-meta
+    if: needs.prepare-meta.outputs.tag_exists == 'true'
+    runs-on: macos-latest
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 准备 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: 切换依赖源为 npm 官方源
+        shell: bash
+        run: |
+          node -e "const fs = require('fs'); const lockfile = 'package-lock.json'; let content = fs.readFileSync(lockfile, 'utf8'); content = content.replace(/https:\/\/registry\.npmmirror\.com\//g, 'https:\/\/registry.npmjs.org/'); fs.writeFileSync(lockfile, content);"
+          npm config set registry https://registry.npmjs.org/
+          npm config set replace-registry-host always
+
+      - name: 安装依赖
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if npm ci --no-audit --no-fund; then
+              exit 0
+            fi
+            if [ "$attempt" = "3" ]; then
+              echo "依赖安装失败，已达到最大重试次数。"
+              exit 1
+            fi
+            sleep 15
+          done
+
+      - name: 构建 macOS 安装包
+        run: npm run dist:mac
+
+      - name: 检查 macOS 发布产物
+        shell: bash
+        run: |
+          ls -lh "release-mac/interview-plus-plus-${{ needs.prepare-meta.outputs.version }}-x64.dmg"
+          ls -lh "release-mac/interview-plus-plus-${{ needs.prepare-meta.outputs.version }}-x64.zip"
+          ls -lh "release-mac/interview-plus-plus-${{ needs.prepare-meta.outputs.version }}-arm64.dmg"
+          ls -lh "release-mac/interview-plus-plus-${{ needs.prepare-meta.outputs.version }}-arm64.zip"
+
+      - name: 上传 macOS 发布产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-release
+          path: |
+            release-mac/interview-plus-plus-${{ needs.prepare-meta.outputs.version }}-x64.dmg
+            release-mac/interview-plus-plus-${{ needs.prepare-meta.outputs.version }}-x64.zip
+            release-mac/interview-plus-plus-${{ needs.prepare-meta.outputs.version }}-arm64.dmg
+            release-mac/interview-plus-plus-${{ needs.prepare-meta.outputs.version }}-arm64.zip
+
+  publish-release:
+    needs:
+      - prepare-meta
+      - build-windows-release
+      - build-macos-release
+    if: needs.prepare-meta.outputs.tag_exists == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: 下载 Windows 产物
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-release
+          path: dist/windows
+
+      - name: 下载 macOS 产物
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-release
+          path: dist/macos
+
+      - name: 生成中文发布说明
+        shell: bash
+        run: |
+          cat <<'EOF' > release-notes.zh-CN.md
+          # interview++ 桌面版 ${{ needs.prepare-meta.outputs.tag }}
 
           ## 版本简介
 
-          这是 `interview++` 的 Windows 桌面安装包，适合直接下载安装使用。
+          这是 `interview++` 的桌面安装包发布版本，包含 Windows 与 macOS 两个平台，适合直接下载安装使用。
 
           ## 本版核心能力
 
@@ -95,10 +210,10 @@ jobs:
 
           ## 安装与使用说明
 
-          - 双击 `.exe` 安装包即可开始安装
-          - 安装时可以自选安装路径
-          - 第一次启动前，必须先在本机填写 DeepSeek API Key
-          - 第一次启动前，必须勾选开源声明与免责声明
+          - Windows 版本提供 `.exe` 安装包，可自选安装路径
+          - macOS 版本提供 `x64` 与 `arm64` 的 `.dmg` 和 `.zip`
+          - 第一次启动前，必须先勾选开源声明与免责声明
+          - 如已在本机保存过 DeepSeek Key，会优先读取；如未配置，也可先进入主页，后续使用 AI 功能时再去系统设置补充
 
           ## 数据与隐私说明
 
@@ -106,27 +221,25 @@ jobs:
           - 简历、面试场次、高频题和回答稿默认保存在本机
           - 本地备份默认不包含 API Key
           - 卸载不会主动删除你的业务数据
-          "@ | Set-Content -Path release-notes.zh-CN.md -Encoding UTF8
+          EOF
 
-      - name: 检查发布产物
-        if: steps.tag_check.outputs.exists == 'true'
+      - name: 核对发布文件
         shell: bash
         run: |
-          ls -lh "release/interview-plus-plus-setup-${{ steps.meta.outputs.version }}.exe"
-          ls -lh "release/interview-plus-plus-setup-${{ steps.meta.outputs.version }}.exe.blockmap"
-          ls -lh "release/latest.yml"
+          find dist -maxdepth 2 -type f -print | sort
 
       - name: 发布到 GitHub Releases
-        if: steps.tag_check.outputs.exists == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.meta.outputs.tag }}
-          name: interview++ Windows 桌面版 ${{ steps.meta.outputs.tag }}
+          tag_name: ${{ needs.prepare-meta.outputs.tag }}
+          name: interview++ 桌面版 ${{ needs.prepare-meta.outputs.tag }}
           body_path: release-notes.zh-CN.md
           overwrite_files: true
           files: |
-            release/interview-plus-plus-setup-${{ steps.meta.outputs.version }}.exe
-            release/interview-plus-plus-setup-${{ steps.meta.outputs.version }}.exe.blockmap
-            release/latest.yml
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            dist/windows/interview-plus-plus-setup-${{ needs.prepare-meta.outputs.version }}.exe
+            dist/windows/interview-plus-plus-setup-${{ needs.prepare-meta.outputs.version }}.exe.blockmap
+            dist/windows/latest.yml
+            dist/macos/interview-plus-plus-${{ needs.prepare-meta.outputs.version }}-x64.dmg
+            dist/macos/interview-plus-plus-${{ needs.prepare-meta.outputs.version }}-x64.zip
+            dist/macos/interview-plus-plus-${{ needs.prepare-meta.outputs.version }}-arm64.dmg
+            dist/macos/interview-plus-plus-${{ needs.prepare-meta.outputs.version }}-arm64.zip

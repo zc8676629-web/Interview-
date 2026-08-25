@@ -16,6 +16,7 @@ import {
   createAppStateStore,
   type AnalysisRecord,
   type AnswerRecord,
+  type AppSettings,
   type AppStateSnapshot,
   type DeepSeekModel,
   type EntityKind,
@@ -38,6 +39,7 @@ const webDistDir = path.join(projectRoot, "web", "dist");
 
 export async function createApp(options?: {
   dataDir?: string;
+  installSignature?: string;
   testDeepSeekConnection?: typeof testDeepSeekConnectivity;
   analyzeResume?: typeof defaultAnalyzeResume;
   expandResumeInterviewQuestions?: typeof defaultExpandResumeInterviewQuestions;
@@ -64,7 +66,7 @@ export async function createApp(options?: {
   });
 
   app.get("/api/bootstrap", (_request, response) => {
-    response.json(toBootstrapPayload(store.getSnapshot()));
+    response.json(toBootstrapPayload(store.getSnapshot(), options?.installSignature));
   });
 
   app.patch("/api/resumes/:id", async (request, response, next) => {
@@ -165,25 +167,14 @@ export async function createApp(options?: {
         return;
       }
 
-      const currentSettings = store.getSnapshot().settings;
-      const resolvedApiKey = typeof body.apiKey === "string" ? body.apiKey.trim() : currentSettings.apiKey;
-      if (body.acceptDisclaimer && !resolvedApiKey) {
-        response.status(400).json({ error: "请先填写并保存 DeepSeek API Key" });
-        return;
-      }
-
       const settings = await store.updateSettings({
         apiKey: typeof body.apiKey === "string" ? body.apiKey.trim() : undefined,
         selectedModel: nextModel,
-        disclaimerAcceptedAt: body.acceptDisclaimer ? new Date().toISOString() : undefined
+        disclaimerAcceptedAt: body.acceptDisclaimer ? new Date().toISOString() : undefined,
+        acknowledgedInstallSignature: body.acceptDisclaimer ? options?.installSignature ?? null : undefined
       });
 
-      response.json({
-        hasApiKey: Boolean(settings.apiKey),
-        selectedModel: settings.selectedModel,
-        maskedApiKey: maskApiKey(settings.apiKey),
-        disclaimerAccepted: Boolean(settings.disclaimerAcceptedAt)
-      });
+      response.json(toSettingsPayload(settings, options?.installSignature));
     } catch (error) {
       next(error);
     }
@@ -748,18 +739,19 @@ export async function createApp(options?: {
 
   app.get("/api/data/export", (_request, response) => {
     const snapshot = store.getSnapshot();
-    response.json({
-      version: 1,
-      exportedAt: new Date().toISOString(),
-      snapshot: {
-        ...snapshot,
-        settings: {
-          ...snapshot.settings,
-          apiKey: "",
-          disclaimerAcceptedAt: null
+      response.json({
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        snapshot: {
+          ...snapshot,
+          settings: {
+            ...snapshot.settings,
+            apiKey: "",
+            disclaimerAcceptedAt: null,
+            acknowledgedInstallSignature: null
+          }
         }
-      }
-    });
+      });
   });
 
   app.post("/api/data/import", async (request, response, next) => {
@@ -781,11 +773,12 @@ export async function createApp(options?: {
         settings: {
           apiKey: body.snapshot.settings?.apiKey || current.settings.apiKey,
           selectedModel: body.snapshot.settings?.selectedModel ?? current.settings.selectedModel,
-          disclaimerAcceptedAt: current.settings.disclaimerAcceptedAt
+          disclaimerAcceptedAt: current.settings.disclaimerAcceptedAt,
+          acknowledgedInstallSignature: current.settings.acknowledgedInstallSignature
         }
       });
 
-      response.json(toBootstrapPayload(store.getSnapshot()));
+      response.json(toBootstrapPayload(store.getSnapshot(), options?.installSignature));
     } catch (error) {
       next(error);
     }
@@ -1212,14 +1205,9 @@ function toResumeContext(analysis: AnalysisRecord) {
   };
 }
 
-function toBootstrapPayload(snapshot: AppStateSnapshot) {
+function toBootstrapPayload(snapshot: AppStateSnapshot, installSignature?: string) {
   return {
-    settings: {
-      hasApiKey: Boolean(snapshot.settings.apiKey),
-      selectedModel: snapshot.settings.selectedModel,
-      maskedApiKey: maskApiKey(snapshot.settings.apiKey),
-      disclaimerAccepted: Boolean(snapshot.settings.disclaimerAcceptedAt)
-    },
+    settings: toSettingsPayload(snapshot.settings, installSignature),
     resumes: snapshot.resumes.filter((item) => !item.deletedAt),
     interviews: snapshot.interviews.filter((item) => !item.deletedAt),
     questions: snapshot.questions.filter((item) => !item.deletedAt),
@@ -1232,6 +1220,28 @@ function toBootstrapPayload(snapshot: AppStateSnapshot) {
     dedupeCandidates: snapshot.dedupeCandidates,
     prepInsight: snapshot.prepInsight
   };
+}
+
+function toSettingsPayload(settings: AppSettings, installSignature?: string) {
+  return {
+    hasApiKey: Boolean(settings.apiKey),
+    selectedModel: settings.selectedModel,
+    maskedApiKey: maskApiKey(settings.apiKey),
+    disclaimerAccepted: Boolean(settings.disclaimerAcceptedAt),
+    requiresSetup: requiresSetupForInstall(settings, installSignature)
+  };
+}
+
+function requiresSetupForInstall(settings: AppSettings, installSignature?: string) {
+  if (!settings.disclaimerAcceptedAt) {
+    return true;
+  }
+
+  if (!installSignature) {
+    return false;
+  }
+
+  return settings.acknowledgedInstallSignature !== installSignature;
 }
 
 function normalizeQuestionText(input: string) {

@@ -1,0 +1,26 @@
+{
+  "appId": "com.zc8676629.interviewplusplus",
+  "productName": "Interview Plus Plus",
+  "asar": true,
+  "artifactName": "interview-plus-plus-${version}-${arch}.${ext}",
+  "directories": {
+    "output": "release-mac"
+  },
+  "files": [
+    "desktop/dist/**/*",
+    "server/dist/**/*",
+    "web/dist/**/*",
+    "package.json",
+    "!**/*.map"
+  ],
+  "mac": {
+    "target": [
+      "zip",
+      "dmg"
+    ],
+    "category": "public.app-category.productivity",
+    "identity": null,
+    "hardenedRuntime": false,
+    "gatekeeperAssess": false
+  }
+}

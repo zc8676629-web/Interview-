@@ -216,6 +216,16 @@ a:focus-visible {
   line-height: 1.7;
 }
 
+.settings-highlight-note {
+  margin: 0;
+  padding: 14px 16px;
+  border: 1px solid rgba(15, 138, 131, 0.16);
+  border-radius: var(--radius-control);
+  background: rgba(231, 251, 248, 0.8);
+  color: var(--color-heading);
+  line-height: 1.7;
+}
+
 .first-run-disclaimer {
   min-height: 100%;
 }
@@ -293,6 +303,22 @@ a:focus-visible {
   color: var(--color-text-muted);
   font-size: 15px;
   line-height: 1.55;
+}
+
+.console-hero p.console-open-source-note {
+  max-width: none;
+  overflow-wrap: anywhere;
+}
+
+.console-inline-link {
+  margin-left: 6px;
+  color: var(--color-primary-strong);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.console-inline-link:hover {
+  text-decoration: underline;
 }
 
 .console-tag-row,
