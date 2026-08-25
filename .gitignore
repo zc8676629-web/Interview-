@@ -1,0 +1,15 @@
+node_modules/
+dist/
+coverage/
+.env
+.env.local
+.local/
+temp/
+uploads/
+server/dist/
+web/dist/
+desktop/dist/
+release/
+*.log
+Thumbs.db
+desktop.ini
