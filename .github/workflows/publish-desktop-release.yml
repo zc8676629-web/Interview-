@@ -1,0 +1,83 @@
+name: Publish Desktop Release
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  publish-windows-release:
+    if: github.ref_type == 'branch' && github.ref_name == github.event.repository.default_branch
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Read release metadata
+        id: meta
+        shell: bash
+        run: |
+          version=$(node -p "require('./package.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
+      - name: Check tag exists
+        id: tag_check
+        shell: bash
+        run: |
+          if git rev-parse "${{ steps.meta.outputs.tag }}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "No matching release tag found for ${{ steps.meta.outputs.tag }}. Skipping publish."
+          fi
+
+      - name: Rewrite mirror URLs for CI
+        if: steps.tag_check.outputs.exists == 'true'
+        shell: pwsh
+        run: |
+          $lockfile = Join-Path $PWD 'package-lock.json'
+          $content = Get-Content -Raw $lockfile
+          $content = $content -replace 'https://registry\.npmmirror\.com/', 'https://registry.npmjs.org/'
+          Set-Content -Path $lockfile -Value $content -Encoding UTF8
+
+      - name: Install dependencies
+        if: steps.tag_check.outputs.exists == 'true'
+        run: npm ci
+
+      - name: Build Windows installer
+        if: steps.tag_check.outputs.exists == 'true'
+        run: npm run dist:win
+
+      - name: Verify release artifacts
+        if: steps.tag_check.outputs.exists == 'true'
+        shell: bash
+        run: |
+          ls -lh "release/interview-plus-plus-setup-${{ steps.meta.outputs.version }}.exe"
+          ls -lh "release/interview-plus-plus-setup-${{ steps.meta.outputs.version }}.exe.blockmap"
+          ls -lh "release/latest.yml"
+
+      - name: Publish GitHub release
+        if: steps.tag_check.outputs.exists == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: Interview++ ${{ steps.meta.outputs.tag }}
+          generate_release_notes: true
+          overwrite_files: true
+          files: |
+            release/interview-plus-plus-setup-${{ steps.meta.outputs.version }}.exe
+            release/interview-plus-plus-setup-${{ steps.meta.outputs.version }}.exe.blockmap
+            release/latest.yml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
